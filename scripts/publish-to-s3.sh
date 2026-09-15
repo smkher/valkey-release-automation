@@ -110,8 +110,15 @@ for dir in "${ARTIFACTS_DIR}"/valkey-debs-*/; do
     debsigs --sign=origin --default-key="${GPG_KEY}" "$deb_file"
   done
 
+  # Generate the flat-repo index. Packages and the .deb files live together in
+  # the per-arch dir, but apt resolves each Packages "Filename:" relative to the
+  # sources.list base URI (.../deb/<os>/), NOT the dir that holds Packages. So
+  # scan from the platform dir to make Filename "<arch>/<pkg>.deb", a real key.
+  # Do NOT run "dpkg-scanpackages ." from inside the arch dir: it emits
+  # "Filename: ./<pkg>.deb", and apt sends the literal "./" to S3, which has no
+  # such key and returns 403 (S3 does not normalize "/./"). See issue #4650.
+  ( cd "$(dirname "$dest")" && dpkg-scanpackages --arch "$arch" "$(basename "$dest")" ) > "$dest/Packages"
   cd "$dest"
-  dpkg-scanpackages --arch "$arch" . > Packages
   gzip -9 -k -f Packages
 
   generate_release "$(pwd)" "$arch" > Release
